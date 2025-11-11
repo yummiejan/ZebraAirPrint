@@ -39,3 +39,5 @@ bld/
 # Others
 *.log
 *.tmp
+publish/ZebraAirPrintService.exe
+publish/ZebraAirPrintService.pdb
