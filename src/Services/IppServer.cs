@@ -48,7 +48,7 @@ public class IppServer : IIppServer
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://+:{_serviceConfig.IppPort}/");
             _listener.Prefixes.Add($"http://+:{_serviceConfig.IppPort}/ipp/");
-            _listener.Prefixes.Add($"http://+:{_serviceConfig.IppPort}/ipp/print");
+            _listener.Prefixes.Add($"http://+:{_serviceConfig.IppPort}/ipp/print/");
 
             _logger.LogInformation("Starting IPP server on port {Port}", _serviceConfig.IppPort);
             _listener.Start();

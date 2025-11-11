@@ -21,6 +21,7 @@ public class BonjourService : IBonjourService
 
     private ServiceDiscovery? _serviceDiscovery;
     private ServiceProfile? _serviceProfile;
+    private ServiceProfile? _universalServiceProfile;
 
     public bool IsAdvertising { get; private set; }
 
@@ -39,12 +40,16 @@ public class BonjourService : IBonjourService
         {
             _logger.LogInformation("Starting Bonjour/mDNS service advertisement");
 
-            // Create service profile
-            _serviceProfile = CreateServiceProfile();
+            // Create service profiles - both _ipp._tcp and _universal subtype for iOS compatibility
+            _serviceProfile = CreateServiceProfile("_ipp._tcp");
+            _universalServiceProfile = CreateServiceProfile("_universal._sub._ipp._tcp");
 
             // Create and start service discovery
             _serviceDiscovery = new ServiceDiscovery();
             _serviceDiscovery.Advertise(_serviceProfile);
+            _serviceDiscovery.Advertise(_universalServiceProfile);
+
+            _logger.LogInformation("Advertised both _ipp._tcp and _universal._sub._ipp._tcp services");
 
             IsAdvertising = true;
 
@@ -96,17 +101,20 @@ public class BonjourService : IBonjourService
     /// <summary>
     /// Creates the service profile for IPP printer advertisement
     /// </summary>
-    private ServiceProfile CreateServiceProfile()
+    private ServiceProfile CreateServiceProfile(string serviceType)
     {
         // Get local IP address
         var localIp = GetLocalIPAddress();
 
-        _logger.LogInformation("Local IP address: {IpAddress}", localIp);
+        if (serviceType == "_ipp._tcp")
+        {
+            _logger.LogInformation("Local IP address: {IpAddress}", localIp);
+        }
 
-        // Create service profile
+        // Create service profile for AirPrint
         var profile = new ServiceProfile(
             instanceName: _serviceConfig.BonjourServiceName,
-            serviceName: "_ipp._tcp",
+            serviceName: serviceType,
             port: (ushort)_serviceConfig.IppPort,
             addresses: new[] { localIp });
 
