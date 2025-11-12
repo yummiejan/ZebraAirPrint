@@ -22,7 +22,8 @@ bld/
 [Ll]og/
 [Ll]ogs/
 publish/
-Installer/
+Installer/bin/
+Installer/obj/
 
 # Visual Studio cache/options directory
 .vs/
