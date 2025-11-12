@@ -34,13 +34,13 @@ winget install Microsoft.DotNet.Runtime.8
 ### Schritt 2: Projekt bauen
 
 ```powershell
-dotnet build -c Release
-dotnet publish -c Release -r win-x64 --self-contained false
+dotnet build ZebraAirPrintService.csproj -c Release
+dotnet publish ZebraAirPrintService.csproj -c Release -r win-x64 --self-contained false -o publish
 ```
 
 Die kompilierte Anwendung befindet sich dann in:
 ```
-bin\Release\net8.0-windows\win-x64\publish\
+publish\
 ```
 
 ### Schritt 3: Service installieren
@@ -87,7 +87,10 @@ Die Konfiguration erfolgt über die Datei `appsettings.json`:
     "Name": "Zebra ZD410",
     "LabelWidth": 50.7,
     "LabelHeight": 30.6,
-    "Resolution": 600
+    "Resolution": 203,
+    "ConnectionType": "WindowsPrinter",
+    "IpAddress": "",
+    "Port": 9100
   },
   "Service": {
     "Name": "Zebra AirPrint Service",
@@ -101,14 +104,64 @@ Die Konfiguration erfolgt über die Datei `appsettings.json`:
     "MaxBackoffSeconds": 60
   },
   "Logging": {
-    "Path": "C:\\AirPrintService\\Logs",
+    "Path": "Logs",
     "RetentionDays": 30,
     "MinimumLevel": "Information"
   }
 }
 ```
 
+### Drucker-Konfiguration
+
+**ConnectionType**: Zwei Modi verfügbar:
+
+**1. WindowsPrinter (empfohlen):**
+```json
+"ConnectionType": "WindowsPrinter"
+```
+- Nutzt den Windows Print Spooler
+- Funktioniert mit USB oder Netzwerk-Druckern
+- Keine IP-Adresse erforderlich
+
+**2. DirectIP (für direkte TCP/IP-Verbindung):**
+```json
+"ConnectionType": "DirectIP",
+"IpAddress": "192.168.1.100",
+"Port": 9100
+```
+- Direkte Verbindung zum Drucker (Port 9100)
+- Schneller, aber erfordert statische IP
+- Nur für Netzwerk-Drucker
+
 ## Verwendung
+
+### Test-Modus (ohne Service-Installation)
+
+**Für Tests auf Laptop oder vor der Installation:**
+
+```powershell
+# 1. PowerShell als Administrator öffnen
+# 2. In den publish-Ordner wechseln
+cd publish
+
+# 3. Firewall-Regeln temporär hinzufügen
+netsh advfirewall firewall add rule name="AirPrint Test IPP" dir=in action=allow protocol=TCP localport=631 profile=private
+netsh advfirewall firewall add rule name="AirPrint Test mDNS" dir=in action=allow protocol=UDP localport=5353 profile=private
+netsh http add urlacl url=http://+:631/ user=EVERYONE
+
+# 4. Anwendung direkt ausführen (nicht als Service)
+.\ZebraAirPrintService.exe
+
+# Logs erscheinen direkt in der Konsole
+# Mit Ctrl+C beenden
+```
+
+**Nach dem Test aufräumen:**
+```powershell
+netsh advfirewall firewall delete rule name="AirPrint Test IPP"
+netsh advfirewall firewall delete rule name="AirPrint Test mDNS"
+netsh http delete urlacl url=http://+:631/
+```
 
 ### Service-Verwaltung
 
@@ -145,9 +198,8 @@ sc start "ZebraAirPrintService"
 ## Logs
 
 Logs werden automatisch geschrieben in:
-```
-C:\AirPrintService\Logs\airprint-YYYY-MM-DD.txt
-```
+- **Test-Modus:** `publish\Logs\airprint-YYYY-MM-DD.txt`
+- **Service-Installation:** `C:\AirPrintService\Logs\airprint-YYYY-MM-DD.txt`
 
 **Log-Beispiel:**
 ```
@@ -164,10 +216,11 @@ C:\AirPrintService\Logs\airprint-YYYY-MM-DD.txt
 
 **Lösung:**
 1. Prüfen Sie, ob der Service läuft: `sc query "ZebraAirPrintService"`
-2. Prüfen Sie die Logs in `C:\AirPrintService\Logs\`
-3. Stellen Sie sicher, dass PC und iPad im gleichen Netzwerk sind
+2. Prüfen Sie die Logs (siehe Abschnitt "Logs")
+3. Stellen Sie sicher, dass PC und iPad im gleichen WLAN sind
 4. Prüfen Sie die Firewall-Regeln
 5. Starten Sie Bonjour Services neu: `services.msc` → "Bonjour-Dienst"
+6. Prüfen Sie, ob Port 631 nicht von anderem Dienst belegt ist: `netstat -ano | findstr :631`
 
 ### Port 631 ist bereits belegt
 
