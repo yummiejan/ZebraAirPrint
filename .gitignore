@@ -44,3 +44,4 @@ Installer/obj/
 *.tmp
 publish/ZebraAirPrintService.exe
 publish/ZebraAirPrintService.pdb
+airprint_info.md
