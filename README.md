@@ -14,68 +14,52 @@ Windows-Service, der einen Zebra ZD410 Etikettendrucker als AirPrint-Drucker im 
 ## Systemvoraussetzungen
 
 - Windows 10 oder höher
-- .NET 8 Runtime
+- .NET 8 SDK (für Build)
+- .NET 8 Runtime (für Ausführung)
 - Apple Bonjour Services
-- Zebra ZD410 mit installiertem Windows-Treiber
+- Zebra ZD410 mit Zebra Setup Utilities
 
 ## Installation
 
 ### Schritt 1: Voraussetzungen installieren
 
-**1. .NET 8 Runtime installieren:**
+**1. .NET 8 SDK installieren:**
 ```powershell
-winget install Microsoft.DotNet.Runtime.8
+winget install Microsoft.DotNet.SDK.8
 ```
 
 **2. Bonjour Services installieren:**
 - Download: [https://support.apple.com/kb/DL999](https://support.apple.com/kb/DL999)
 - Alternative: Bonjour Print Services for Windows
 
-### Schritt 2: Projekt bauen
+**3. Zebra Setup Utilities installieren:**
+- Download: [https://www.zebra.com/gb/en/support-downloads/software/printer-software/printer-setup-utilities.html](https://www.zebra.com/gb/en/support-downloads/software/printer-software/printer-setup-utilities.html)
+- Drucker als "Zebra ZD410" in Windows einrichten
+
+### Schritt 2: Installer bauen
 
 ```powershell
-dotnet build ZebraAirPrintService.csproj -c Release
-dotnet publish ZebraAirPrintService.csproj -c Release -r win-x64 --self-contained false -o publish
+.\build-installer.ps1
 ```
 
-Die kompilierte Anwendung befindet sich dann in:
+Der MSI-Installer wird erstellt in:
 ```
-publish\
+Installer\bin\Release\ZebraAirPrintInstaller.msi
 ```
 
 ### Schritt 3: Service installieren
 
-**Als Administrator ausführen:**
+**Doppelklick auf die MSI-Datei** oder:
 
 ```powershell
-.\install.ps1
+msiexec /i "Installer\bin\Release\ZebraAirPrintInstaller.msi"
 ```
 
-Oder manuell:
-
-```powershell
-# Service erstellen
-sc create "ZebraAirPrintService" binPath="C:\AirPrintService\ZebraAirPrintService.exe"
-
-# Beschreibung setzen
-sc description "ZebraAirPrintService" "AirPrint Server für Zebra ZD410 Etikettendrucker"
-
-# Auto-Start konfigurieren
-sc config "ZebraAirPrintService" start=auto
-
-# Service starten
-sc start "ZebraAirPrintService"
-```
-
-### Schritt 4: Firewall-Regeln konfigurieren
-
-```powershell
-# IPP-Port (TCP 631)
-netsh advfirewall firewall add rule name="AirPrint IPP" dir=in action=allow protocol=TCP localport=631 profile=private
-
-# mDNS-Port (UDP 5353)
-netsh advfirewall firewall add rule name="AirPrint mDNS" dir=in action=allow protocol=UDP localport=5353 profile=private
-```
+Der Installer:
+- ✅ Installiert den Service nach `C:\Program Files\Zebra AirPrint Service\`
+- ✅ Konfiguriert Firewall-Regeln automatisch
+- ✅ Startet den Service automatisch
+- ✅ Richtet Auto-Start beim Systemstart ein
 
 ## Konfiguration
 
@@ -135,34 +119,6 @@ Die Konfiguration erfolgt über die Datei `appsettings.json`:
 
 ## Verwendung
 
-### Test-Modus (ohne Service-Installation)
-
-**Für Tests auf Laptop oder vor der Installation:**
-
-```powershell
-# 1. PowerShell als Administrator öffnen
-# 2. In den publish-Ordner wechseln
-cd publish
-
-# 3. Firewall-Regeln temporär hinzufügen
-netsh advfirewall firewall add rule name="AirPrint Test IPP" dir=in action=allow protocol=TCP localport=631 profile=private
-netsh advfirewall firewall add rule name="AirPrint Test mDNS" dir=in action=allow protocol=UDP localport=5353 profile=private
-netsh http add urlacl url=http://+:631/ user=EVERYONE
-
-# 4. Anwendung direkt ausführen (nicht als Service)
-.\ZebraAirPrintService.exe
-
-# Logs erscheinen direkt in der Konsole
-# Mit Ctrl+C beenden
-```
-
-**Nach dem Test aufräumen:**
-```powershell
-netsh advfirewall firewall delete rule name="AirPrint Test IPP"
-netsh advfirewall firewall delete rule name="AirPrint Test mDNS"
-netsh http delete urlacl url=http://+:631/
-```
-
 ### Service-Verwaltung
 
 **Status prüfen:**
@@ -198,7 +154,6 @@ sc start "ZebraAirPrintService"
 ## Logs
 
 Logs werden automatisch geschrieben in:
-- **Test-Modus:** `publish\Logs\airprint-YYYY-MM-DD.txt`
 - **Service-Installation:** `C:\AirPrintService\Logs\airprint-YYYY-MM-DD.txt`
 
 **Log-Beispiel:**
@@ -210,62 +165,31 @@ Logs werden automatisch geschrieben in:
 [2025-11-10 14:24:13] [INF] Print job 1 completed successfully
 ```
 
-## Troubleshooting
-
-### Drucker erscheint nicht auf dem iPad
-
-**Lösung:**
-1. Prüfen Sie, ob der Service läuft: `sc query "ZebraAirPrintService"`
-2. Prüfen Sie die Logs (siehe Abschnitt "Logs")
-3. Stellen Sie sicher, dass PC und iPad im gleichen WLAN sind
-4. Prüfen Sie die Firewall-Regeln
-5. Starten Sie Bonjour Services neu: `services.msc` → "Bonjour-Dienst"
-6. Prüfen Sie, ob Port 631 nicht von anderem Dienst belegt ist: `netstat -ano | findstr :631`
-
-### Port 631 ist bereits belegt
-
-**Lösung:**
-1. Ändern Sie den Port in `appsettings.json` (z.B. auf 8631)
-2. Passen Sie die Firewall-Regel entsprechend an
-3. Service neu starten
-
-### Drucker druckt nicht (offline)
-
-**Lösung:**
-1. Prüfen Sie, ob der Zebra-Drucker in Windows als "Zebra ZD410" eingerichtet ist
-2. Drucken Sie einen Windows-Testdruck, um zu prüfen, ob der Drucker funktioniert
-3. Jobs werden automatisch wiederholt, wenn der Drucker wieder online ist
-
-### Service startet nicht
-
-**Fehler: "Access Denied" beim Starten**
-
-**Lösung:**
-```powershell
-# URL ACL konfigurieren (als Administrator)
-netsh http add urlacl url=http://+:631/ user=EVERYONE
-```
-
 ## Deinstallation
 
+### Option 1: Windows Systemsteuerung
+
+1. **Einstellungen → Apps → Apps & Features**
+2. Suche nach "Zebra AirPrint Service"
+3. Klick auf **Deinstallieren**
+
+### Option 2: MSI-Installer
+
 ```powershell
-.\uninstall.ps1
+msiexec /x "Installer\bin\Release\ZebraAirPrintInstaller.msi"
 ```
 
-Oder manuell:
+### Option 3: Uninstall-Script
 
 ```powershell
-# Service stoppen und entfernen
-sc stop "ZebraAirPrintService"
-sc delete "ZebraAirPrintService"
-
-# Firewall-Regeln entfernen
-netsh advfirewall firewall delete rule name="AirPrint IPP"
-netsh advfirewall firewall delete rule name="AirPrint mDNS"
-
-# URL ACL entfernen (falls konfiguriert)
-netsh http delete urlacl url=http://+:631/
+.\uninstall-service.ps1
 ```
+
+Der Deinstaller entfernt automatisch:
+- ✅ Windows Service
+- ✅ Firewall-Regeln
+- ✅ URL ACL Konfiguration
+- ✅ Installationsdateien
 
 ## Architektur
 
@@ -292,14 +216,6 @@ Program.cs (Host + DI)
 **Version:** 1.0.0 (Phase 1 MVP)
 **Framework:** .NET 8
 **Lizenz:** MIT
-
-## Nächste Schritte (Phase 2 - Optional)
-
-Falls die Etiketten nicht korrekt formatiert werden:
-- Implementierung von Bildverarbeitung (Cropping, Skalierung)
-- PDF-Rendering mit PDFium.NET
-- URF-Format-Decoder
-- Automatische Format-Anpassung auf 50.7mm × 30.6mm
 
 ---
 
