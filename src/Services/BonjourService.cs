@@ -21,7 +21,6 @@ public class BonjourService : IBonjourService
 
     private ServiceDiscovery? _serviceDiscovery;
     private ServiceProfile? _serviceProfile;
-    private ServiceProfile? _universalServiceProfile;
 
     public bool IsAdvertising { get; private set; }
 
@@ -40,16 +39,18 @@ public class BonjourService : IBonjourService
         {
             _logger.LogInformation("Starting Bonjour/mDNS service advertisement");
 
-            // Create service profiles - both _ipp._tcp and _universal subtype for iOS compatibility
-            _serviceProfile = CreateServiceProfile("_ipp._tcp");
-            _universalServiceProfile = CreateServiceProfile("_universal._sub._ipp._tcp");
+            // Create service profile with _universal subtype for iOS compatibility
+            _serviceProfile = CreateServiceProfile();
+
+            // CRITICAL: Add _universal subtype for iOS discovery
+            // iOS devices browse specifically for _universal._sub._ipp._tcp services
+            _serviceProfile.Subtypes.Add("_universal");
 
             // Create and start service discovery
             _serviceDiscovery = new ServiceDiscovery();
             _serviceDiscovery.Advertise(_serviceProfile);
-            _serviceDiscovery.Advertise(_universalServiceProfile);
 
-            _logger.LogInformation("Advertised both _ipp._tcp and _universal._sub._ipp._tcp services");
+            _logger.LogInformation("Advertised _ipp._tcp service with _universal subtype");
 
             IsAdvertising = true;
 
@@ -58,7 +59,7 @@ public class BonjourService : IBonjourService
                 _serviceProfile.InstanceName,
                 _serviceConfig.IppPort);
 
-            _logger.LogInformation("mDNS advertisement active - printer should now be discoverable on the network");
+            _logger.LogInformation("mDNS advertisement active - printer should now be discoverable on iOS devices");
 
             return Task.CompletedTask;
         }
@@ -101,29 +102,27 @@ public class BonjourService : IBonjourService
     /// <summary>
     /// Creates the service profile for IPP printer advertisement
     /// </summary>
-    private ServiceProfile CreateServiceProfile(string serviceType)
+    private ServiceProfile CreateServiceProfile()
     {
         // Get local IP address
         var localIp = GetLocalIPAddress();
-
-        if (serviceType == "_ipp._tcp")
-        {
-            _logger.LogInformation("Local IP address: {IpAddress}", localIp);
-        }
+        _logger.LogInformation("Local IP address: {IpAddress}", localIp);
 
         // Create service profile for AirPrint
         var profile = new ServiceProfile(
             instanceName: _serviceConfig.BonjourServiceName,
-            serviceName: serviceType,
+            serviceName: "_ipp._tcp",
             port: (ushort)_serviceConfig.IppPort,
             addresses: new[] { localIp });
 
         // Add TXT records with printer attributes
         var txtRecords = BuildTxtRecords();
+
+        _logger.LogInformation("Adding TXT records to mDNS advertisement:");
         foreach (var record in txtRecords)
         {
             profile.AddProperty(record.Key, record.Value);
-            _logger.LogDebug("TXT Record: {Key}={Value}", record.Key, record.Value);
+            _logger.LogInformation("  {Key} = {Value}", record.Key, record.Value);
         }
 
         return profile;
@@ -131,59 +130,47 @@ public class BonjourService : IBonjourService
 
     /// <summary>
     /// Builds TXT records for the mDNS advertisement
+    /// Based on Apple AirPrint specification and iOS compatibility requirements
     /// </summary>
     private Dictionary<string, string> BuildTxtRecords()
     {
         return new Dictionary<string, string>
         {
-            // Required AirPrint attributes
+            // REQUIRED - TXT record format version (must be first)
             ["txtvers"] = "1",
+
+            // REQUIRED - Number of print queues
             ["qtotal"] = "1",
+
+            // REQUIRED - Resource path for IPP endpoint (no leading slash)
             ["rp"] = "ipp/print",
+
+            // REQUIRED - Printer make and model
             ["ty"] = _printerConfig.Name,
-            ["adminurl"] = $"http://localhost:{_serviceConfig.IppPort}/",
-            ["note"] = "AirPrint Server for Zebra ZD410",
 
-            // Document formats
-            ["pdl"] = "application/pdf,image/urf,image/jpeg,image/png",
-
-            // URF (Unencoded Raster Format) capabilities
-            // W8H7 = 8 inches wide, 7 inches high (approximation)
-            // SRGB24 = 24-bit sRGB color
-            // RS203 = 203 DPI resolution (Zebra ZD410)
-            ["URF"] = $"W8H7,SRGB24,RS{_printerConfig.Resolution}",
-
-            // Color support
-            ["Color"] = "F", // F = False (monochrome)
-
-            // Duplex support
-            ["Duplex"] = "S", // S = Simplex (one-sided)
-
-            // Media size (label dimensions)
-            ["media"] = "om_small-label_50.7x30.6mm",
-
-            // Print quality
-            ["print-quality-supported"] = "3,4,5",
-            ["print-quality-default"] = "4",
-
-            // Fax support
-            ["Fax"] = "F",
-
-            // Scan support
-            ["Scan"] = "F",
-
-            // Priority
-            ["priority"] = "50",
-
-            // Product
+            // REQUIRED - Product identifier with parentheses
             ["product"] = $"({_printerConfig.Name})",
 
-            // USB MFG and MDL (for compatibility)
-            ["usb_MFG"] = "Zebra",
-            ["usb_MDL"] = "ZD410",
+            // REQUIRED - Location/description
+            ["note"] = "AirPrint Server for Zebra ZD410",
 
-            // Kind (label printer)
-            ["kind"] = "label"
+            // REQUIRED - Document formats (MUST include image/urf for iOS)
+            ["pdl"] = "application/pdf,image/jpeg,image/urf",
+
+            // REQUIRED - URF (Universal Raster Format) capabilities for iOS 6+
+            // V1.4 = URF version 1.4
+            // W8 = 8-bit grayscale
+            // SRGB24 = 24-bit sRGB color
+            // RS203 = 203 DPI resolution (Zebra ZD410)
+            // DM1 = Simplex only (no duplex)
+            // CP1 = 1 copy per job
+            // PQ3-4-5 = Print quality: draft, normal, high
+            ["URF"] = $"V1.4,W8,SRGB24,RS{_printerConfig.Resolution},DM1,CP1,PQ3-4-5",
+
+            // Recommended - Printer capabilities
+            ["Color"] = "F", // F = False (monochrome)
+            ["Duplex"] = "F", // F = False (no duplex support)
+            ["Copies"] = "T" // T = True (supports multiple copies)
         };
     }
 

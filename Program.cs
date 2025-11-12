@@ -84,7 +84,13 @@ public class Program
     private static void ConfigureSerilog(IConfiguration configuration)
     {
         // Get logging configuration
-        var loggingPath = configuration["Logging:Path"] ?? "C:\\AirPrintService\\Logs";
+        var configuredPath = configuration["Logging:Path"];
+        var loggingPath = string.IsNullOrWhiteSpace(configuredPath)
+            ? Path.Combine(AppContext.BaseDirectory, "Logs")
+            : Path.IsPathRooted(configuredPath)
+                ? configuredPath
+                : Path.Combine(AppContext.BaseDirectory, configuredPath);
+
         var retentionDays = int.Parse(configuration["Logging:RetentionDays"] ?? "30");
         var minimumLevel = configuration["Logging:MinimumLevel"] ?? "Information";
 
