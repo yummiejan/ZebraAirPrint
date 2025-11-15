@@ -41,7 +41,8 @@
                       Name="ZebraAirPrintService"
                       Start="install"
                       Stop="both"
-                      Remove="uninstall" />
+                      Remove="both"
+                      Wait="yes" />
 
       <!-- Configure service recovery on failure -->
       <util:ServiceConfig ServiceName="ZebraAirPrintService"
@@ -123,9 +124,39 @@
                   Return="ignore"
                   ExeCommand="[SystemFolder]cmd.exe /c &quot;netsh http delete urlacl url=http://+:631/&quot;" />
 
+    <!-- Custom action to stop service and kill orphaned processes before uninstall -->
+    <CustomAction Id="StopServiceAndProcesses"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"
+                  ExeCommand="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Stop-Service -Name 'ZebraAirPrintService' -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Get-Process -Name 'ZebraAirPrintService' -ErrorAction SilentlyContinue | Stop-Process -Force&quot;" />
+
+    <!-- Custom action to clean up old installation paths -->
+    <CustomAction Id="CleanupOldPaths"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"
+                  ExeCommand="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;if (Test-Path 'C:\AirPrintService') { Remove-Item -Path 'C:\AirPrintService' -Recurse -Force -ErrorAction SilentlyContinue }&quot;" />
+
+    <!-- Custom action to remove HKLM registry entries -->
+    <CustomAction Id="CleanupHKLMRegistry"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"
+                  ExeCommand="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Remove-Item -Path 'HKLM:\Software\ZebraAirPrintService' -Recurse -Force -ErrorAction SilentlyContinue&quot;" />
+
     <InstallExecuteSequence>
       <Custom Action="ConfigureUrlAcl" Before="InstallFinalize" Condition="NOT Installed" />
-      <Custom Action="RemoveUrlAcl" Before="RemoveFiles" Condition="Installed" />
+      <!-- Stop service and kill processes before removing service -->
+      <Custom Action="StopServiceAndProcesses" Before="DeleteServices" Condition="REMOVE~=&quot;ALL&quot;" />
+      <!-- Remove URL ACL before removing files -->
+      <Custom Action="RemoveUrlAcl" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;" />
+      <!-- Clean up HKLM registry and old paths -->
+      <Custom Action="CleanupHKLMRegistry" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="CleanupOldPaths" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
 
     <!-- UI Reference -->
